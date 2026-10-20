@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+*.pyc
+cc.*.bin
+cc.*.bin.gz
+sauvegarde_fr/
+check.json
+resultats.txt
+.vscode/

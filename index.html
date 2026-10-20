@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Word Radar</title>
+<style>
+:root{--bg:#eef7f7;--card:#fff;--tx:#0b3b3f;--mut:#4d7a7e;--ac:#0a8f9c;--ring:#b7d9dc;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#062a2e;--card:#0b3b3f;--tx:#e6fbff;--mut:#8cc6cc;--ac:#22e0f0;--ring:#1d5a60}}
+:root[data-theme="dark"]{--bg:#062a2e;--card:#0b3b3f;--tx:#e6fbff;--mut:#8cc6cc;--ac:#22e0f0;--ring:#1d5a60}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;padding:12px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;max-width:900px;margin:0 auto 10px}
+.pill{background:var(--card);border-radius:12px;padding:8px 14px;font-weight:700;font-size:18px}
+.pill small{display:block;font-size:11px;font-weight:400;color:var(--mut)}
+.row{display:flex;gap:8px;max-width:900px;margin:0 auto 10px}
+input{flex:1;font-size:20px;padding:12px;border-radius:12px;border:2px solid var(--ring);background:var(--card);color:var(--tx);min-width:0}
+button{font-size:16px;padding:10px 16px;border:0;border-radius:12px;background:var(--ac);color:#04282b;font-weight:700;cursor:pointer}
+button.sec{background:var(--card);color:var(--tx);border:2px solid var(--ring)}
+button:disabled{opacity:.4;cursor:default}
+.grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:12px;max-width:900px;margin:0 auto}
+@media (max-width:640px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border-radius:16px;padding:10px}
+svg{width:100%;height:auto;display:block}
+.li{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;margin-bottom:6px;border-radius:10px;font-size:20px;font-weight:700;border-left:8px solid}
+.li span{font-size:13px;font-weight:600}
+#msg{max-width:900px;margin:0 auto 8px;min-height:22px;color:var(--mut);text-align:center}
+@keyframes p{0%,100%{r:9}50%{r:14}}
+.best{animation:p 1s infinite}
+#end{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;padding:20px}
+#end .box{background:var(--card);border-radius:20px;padding:24px;max-width:420px;width:100%;text-align:center}
+#end h2{margin:0 0 6px;font-size:40px;color:var(--ac)}
+</style>
+</head>
+<body>
+<div class="top">
+ <div class="pill"><small>Time</small><span id="t">120</span> s</div>
+ <div class="pill"><small>Score</small><span id="s">0</span></div>
+ <div class="pill"><small>Words found</small><span id="f">0</span></div>
+ <button id="go">Start</button>
+</div>
+<div class="row">
+ <input id="in" placeholder="Type a word…" autocomplete="off" disabled>
+ <button id="ok" disabled>OK</button>
+</div>
+<div class="row">
+ <button class="sec" id="hint" disabled>Hint</button>
+ <button class="sec" id="skip" disabled>Skip</button>
+ <div id="hl" style="align-self:center;color:var(--mut)"></div>
+</div>
+<div id="msg">Find the secret word before the 120 s run out. As soon as you find it, a new word starts.</div>
+<div class="grid">
+ <div class="card"><svg viewBox="0 0 400 400" id="sv"></svg></div>
+ <div class="card"><div id="top"></div></div>
+</div>
+<div id="end"><div class="box"><div>Time’s up</div><h2 id="es">0</h2><div id="ed" style="color:var(--mut);margin-bottom:14px"></div><button id="re">Play again</button></div></div>
+<script>
+var $=function(i){return document.getElementById(i)};
+var norm=function(s){return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim()};
+var L=[[.8,'Burning','#ff5a3c'],[.6,'Hot','#ff9f43'],[.4,'Warm','#f5d76e'],[.2,'Cold','#5ec8e5'],[0,'Freezing','#7a9bb8']];
+var lab=function(s){for(var i=0;i<L.length;i++)if(s>=L[i][0])return L[i]};
+var pts=function(s){return s>=.8?4:s>=.6?3:s>=.4?2:s>=.2?1:0};
+function bestPts(){var b=-1;st.g.forEach(function(g){if(g.s>b)b=g.s});return b<0?0:pts(b)}
+var st={g:[],done:[]};
+function api(p){return fetch(p).then(function(r){return r.json()})}
+function newWord(){st.g=[];st.hint=false;st.ws=st.left;$('hl').textContent='';$('hint').disabled=true;render();
+ return api('/new?prev='+(st.cur?st.cur.id:-1)).then(function(d){st.cur=d})}
+function start(){clearInterval(st.tm);st={g:[],done:[],i:0,left:120,score:0,found:0,words:[],run:false,busy:false};
+ $('go').disabled=true;$('end').style.display='none';$('msg').textContent='Loading…';
+ newWord().then(function(){st.run=true;$('in').disabled=$('ok').disabled=$('skip').disabled=false;upd();$('in').value='';$('in').focus();$('msg').textContent='Let’s go!';
+  st.tm=setInterval(function(){st.left--;upd();if(st.ws-st.left>=30&&!st.hint)$('hint').disabled=false;if(st.left<=0)end()},1000)})}
+function upd(){$('t').textContent=st.left;$('s').textContent=st.score;$('f').textContent=st.found}
+function guess(){if(!st.run||st.busy||!st.cur)return;var raw=$('in').value.trim(),w=norm(raw);$('in').value='';if(!w)return;
+ for(var k=0;k<st.g.length;k++)if(st.g[k].w===w){$('msg').textContent='Already tried.';return}
+ st.busy=true;var id=st.cur.id;
+ api('/guess?id='+id+'&w='+encodeURIComponent(raw)).then(function(r){st.busy=false;if(!st.run||id!==st.cur.id)return;
+  if(r.found){var sp=st.ws-st.left,p=5;st.score+=p;st.found++;st.words.push(r.name);st.done.push(id);
+   $('msg').textContent='Well done! “'+r.name+'” found in '+sp+' s: +'+p+' points. New word!';upd();return newWord()}
+  st.g.push({w:w,t:raw,s:r.s,a:r.a});$('msg').textContent='';render()}).catch(function(){st.busy=false;$('msg').textContent='Cannot reach the server.'})}
+function render(){var s=$('sv'),h='',cx=200,cy=200,R=function(x){return 18+(1-x)*165};
+ [.8,.6,.4,.2].forEach(function(x,i){h+='<circle cx="200" cy="200" r="'+R(x)+'" fill="none" stroke="var(--ring)" stroke-dasharray="3 4"/>';h+='<text x="200" y="'+(200-R(x)-3)+'" font-size="9" text-anchor="middle" fill="var(--mut)">'+L[i][1]+'</text>'});
+ h+='<text x="200" y="208" font-size="26" text-anchor="middle" fill="var(--ac)">★</text>';
+ var best=null;st.g.forEach(function(g){if(!best||g.s>best.s)best=g});
+ st.g.forEach(function(g){var r=R(g.s),x=cx+r*Math.cos(g.a*Math.PI/180),y=cy+r*Math.sin(g.a*Math.PI/180),l=lab(g.s);
+  h+='<line x1="200" y1="200" x2="'+x+'" y2="'+y+'" stroke="'+l[2]+'" stroke-opacity=".25"/>';
+  h+='<circle cx="'+x+'" cy="'+y+'" r="9" fill="'+l[2]+'"'+(g===best?' class="best"':'')+'/>';
+  h+='<text x="'+x+'" y="'+(y-14)+'" font-size="13" font-weight="700" text-anchor="middle" fill="var(--tx)">'+g.t+'</text>'});
+ s.innerHTML=h;
+ var tp=st.g.slice().sort(function(a,b){return b.s-a.s}).slice(0,5),o='';
+ tp.forEach(function(g){var l=lab(g.s);o+='<div class="li" style="border-color:'+l[2]+'">'+g.t+'<span style="color:'+l[2]+'">'+l[1]+' · '+Math.round(g.s*100)+'%</span></div>'});
+ $('top').innerHTML=o||'<div style="color:var(--mut);padding:10px">Your 5 best words will appear here.</div>'}
+function end(){clearInterval(st.tm);st.run=false;var part=bestPts();st.score+=part;upd();
+ $('in').disabled=$('ok').disabled=$('skip').disabled=$('hint').disabled=true;
+ api('/reveal?id='+st.cur.id).then(function(r){
+  $('es').textContent=st.score+' pts';$('ed').textContent=st.found+' word(s) found'+(st.words.length?': '+st.words.join(', '):'')+'. Current word: “'+r.name+'” (+'+part+' pt for the closest guess).';
+  $('end').style.display='flex';$('go').disabled=false})}
+$('go').onclick=start;$('re').onclick=start;$('ok').onclick=guess;
+$('in').onkeydown=function(e){if(e.key==='Enter')guess()};
+$('hint').onclick=function(){st.hint=true;$('hl').textContent='Hint: '+st.cur.hint;$('hint').disabled=true};
+$('skip').onclick=function(){var id=st.cur.id,part=bestPts();st.score+=part;upd();api('/reveal?id='+id).then(function(r){$('msg').textContent='Skipped: it was “'+r.name+'” (+'+part+' pt).';st.done.push(id);return newWord()})};
+render();
+</script>
+</body>
+</html>
